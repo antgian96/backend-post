@@ -1,54 +1,34 @@
-package com.example.blog.controller;
-
-import com.example.blog.model.Author;
-import com.example.blog.repository.AuthorRepository;
-import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import java.util.List;
-
 @RestController
 @RequestMapping("/authors")
-@RequiredArgsConstructor
 public class AuthorController {
-
     private final AuthorRepository authorRepository;
+    private final EmailService emailService;
+    private final CloudinaryService cloudinaryService;
 
-    @GetMapping
-    public List<Author> getAllAuthors() {
-        return authorRepository.findAll();
-    }
-
-    @GetMapping("/{id}")
-    public ResponseEntity<Author> getAuthorById(@PathVariable Long id) {
-        return authorRepository.findById(id)
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+    public AuthorController(AuthorRepository authorRepository, EmailService emailService, CloudinaryService cloudinaryService) {
+        this.authorRepository = authorRepository;
+        this.emailService = emailService;
+        this.cloudinaryService = cloudinaryService;
     }
 
     @PostMapping
-    public Author createAuthor(@RequestBody Author author) {
+    public Author createAuthor(@RequestBody @Valid Author author) {
         author.setAvatar("https://api.adorable.io/avatars/285/" + author.getEmail() + ".png");
-        return authorRepository.save(author);
+        Author savedAuthor = authorRepository.save(author);
+        emailService.sendConfirmationEmail(author.getEmail());
+        return savedAuthor;
     }
 
-    @PutMapping("/{id}")
-    public ResponseEntity<Author> updateAuthor(@PathVariable Long id, @RequestBody Author updatedAuthor) {
-        return authorRepository.findById(id)
-                .map(author -> {
-                    author.setNome(updatedAuthor.getNome());
-                    author.setCognome(updatedAuthor.getCognome());
-                    author.setEmail(updatedAuthor.getEmail());
-                    author.setDataDiNascita(updatedAuthor.getDataDiNascita());
-                    return ResponseEntity.ok(authorRepository.save(author));
-                })
-                .orElse(ResponseEntity.notFound().build());
-    }
+    @PostMapping("/{id}/upload-avatar")
+    public ResponseEntity<String> uploadAvatar(@PathVariable Long id, @RequestParam("file") MultipartFile file) throws IOException {
+        Author author = authorRepository.findById(id)
+                .orElseThrow(() -> new EntityNotFoundException("Autore non trovato"));
 
-    @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteAuthor(@PathVariable Long id) {
-        authorRepository.deleteById(id);
-        return ResponseEntity.noContent().build();
+        String imageUrl = cloudinaryService.uploadFile(file);
+        author.setAvatar(imageUrl);
+        authorRepository.save(author);
+
+        return ResponseEntity.ok("Avatar caricato con successo: " + imageUrl);
     }
 }
+
